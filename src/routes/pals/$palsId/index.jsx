@@ -50,20 +50,26 @@ export const Route = createFileRoute("/pals/$palsId/")({
 
     // Fetch and cache evolution Pokémon details
     const evolutionDetails = await Promise.all(
-      evolutionNames.map((name) =>
-        queryClient.fetchQuery({
+      evolutionNames.map(async (name) => {
+        const pokemon = await queryClient.fetchQuery({
           queryKey: ["pal", name],
           queryFn: () => fetchPal(name),
           staleTime: Infinity,
-        })
-      )
+        });
+
+        // ✅ Cache images in localStorage
+        await cacheImage(pokemon.sprites.front_default);
+        await cacheImage(pokemon.sprites.back_default);
+
+        return pokemon;
+      })
     );
 
-    // Preload images for smooth rendering
+    // ✅ Preload images from localStorage
     [pal, ...evolutionDetails].forEach((pokemon) => {
       if (pokemon) {
-        preloadImage(pokemon.sprites.front_default);
-        preloadImage(pokemon.sprites.back_default);
+        preloadCachedImage(pokemon.sprites.front_default);
+        preloadCachedImage(pokemon.sprites.back_default);
       }
     });
 
@@ -82,14 +88,47 @@ function RouteComponent() {
         {evolutionDetails.map((_pal) => (
           <PalRotatingImage
             key={_pal.id}
-            front={_pal.sprites.front_default}
-            back={_pal.sprites.back_default}
+            front={getCachedImage(_pal.sprites.front_default)}
+            back={getCachedImage(_pal.sprites.back_default)}
           />
         ))}
       </div>
     </div>
   );
 }
+
+// ✅ Function to cache images in localStorage
+const cacheImage = async (url) => {
+  if (!url || localStorage.getItem(url)) return; // Skip if already cached
+
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    const reader = new FileReader();
+
+    reader.onloadend = () => {
+      localStorage.setItem(url, reader.result); // Save Base64 image
+    };
+
+    reader.readAsDataURL(blob);
+  } catch (error) {
+    console.error("Failed to cache image:", error);
+  }
+};
+
+// ✅ Function to retrieve cached image from localStorage
+const getCachedImage = (url) => {
+  return localStorage.getItem(url) || url; // Return cached image or fallback to original
+};
+
+// ✅ Function to preload cached images (faster rendering)
+const preloadCachedImage = (url) => {
+  const cachedImage = getCachedImage(url);
+  if (!cachedImage) return;
+
+  let img = new Image();
+  img.src = cachedImage;
+};
 
 // Fetching functions
 const fetchPal = async (name) => {
@@ -108,11 +147,4 @@ const fetchEvolutionChain = async (evolutionChainUrl) => {
   const res = await fetch(evolutionChainUrl);
   if (!res.ok) throw new Error("Failed to fetch EvolutionChain");
   return res.json();
-};
-
-// Preload image function using new Image()
-const preloadImage = (url) => {
-  if (!url) return;
-  let img = new Image();
-  img.src = url;
 };
