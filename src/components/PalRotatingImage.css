@@ -1,0 +1,21 @@
+.sprite-container {
+    position: relative;
+    width: 100px; /* Adjust as needed */
+    height: 100px; /* Adjust as needed */
+  }
+  
+  .sprite {
+    position: absolute;
+    width: 100%;
+    height: auto;
+    transition: opacity 1s ease-in-out; /* Smooth fade effect */
+  }
+  
+  .hidden {
+    opacity: 0;
+  }
+  
+  .visible {
+    opacity: 1;
+  }
+  
