@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { openDB } from "idb"; // IndexedDB helper library
 import PalRotatingImage from "@components/PalRotatingImage";
 
 export const Route = createFileRoute("/pals/$palsId/")({
@@ -57,19 +58,19 @@ export const Route = createFileRoute("/pals/$palsId/")({
           staleTime: Infinity,
         });
 
-        // ✅ Cache images in localStorage
-        await cacheImage(pokemon.sprites.front_default);
-        await cacheImage(pokemon.sprites.back_default);
+        // ✅ Cache images in IndexedDB
+        await cacheImageIndexedDB(pokemon.sprites.front_default);
+        await cacheImageIndexedDB(pokemon.sprites.back_default);
 
         return pokemon;
       })
     );
 
-    // ✅ Preload images from localStorage
-    [pal, ...evolutionDetails].forEach((pokemon) => {
+    // ✅ Preload images from IndexedDB
+    [pal, ...evolutionDetails].forEach(async (pokemon) => {
       if (pokemon) {
-        preloadCachedImage(pokemon.sprites.front_default);
-        preloadCachedImage(pokemon.sprites.back_default);
+        preloadCachedImage(await getCachedImageIndexedDB(pokemon.sprites.front_default));
+        preloadCachedImage(await getCachedImageIndexedDB(pokemon.sprites.back_default));
       }
     });
 
@@ -88,8 +89,8 @@ function RouteComponent() {
         {evolutionDetails.map((_pal) => (
           <PalRotatingImage
             key={_pal.id}
-            front={getCachedImage(_pal.sprites.front_default)}
-            back={getCachedImage(_pal.sprites.back_default)}
+            front={getCachedImageIndexedDB(_pal.sprites.front_default)}
+            back={getCachedImageIndexedDB(_pal.sprites.back_default)}
           />
         ))}
       </div>
@@ -97,37 +98,43 @@ function RouteComponent() {
   );
 }
 
-// ✅ Function to cache images in localStorage
-const cacheImage = async (url) => {
-  if (!url || localStorage.getItem(url)) return; // Skip if already cached
+// ✅ Function to cache images in IndexedDB
+const cacheImageIndexedDB = async (url) => {
+  if (!url) return;
+
+  const db = await openDB("pokemon-images", 1, {
+    upgrade(db) {
+      db.createObjectStore("images");
+    },
+  });
+
+  const existingImage = await db.get("images", url);
+  if (existingImage) return; // Skip caching if already exists
 
   try {
     const response = await fetch(url);
     const blob = await response.blob();
-    const reader = new FileReader();
-
-    reader.onloadend = () => {
-      localStorage.setItem(url, reader.result); // Save Base64 image
-    };
-
-    reader.readAsDataURL(blob);
+    await db.put("images", blob, url);
   } catch (error) {
-    console.error("Failed to cache image:", error);
+    console.error("Failed to cache image in IndexedDB:", error);
   }
 };
 
-// ✅ Function to retrieve cached image from localStorage
-const getCachedImage = (url) => {
-  return localStorage.getItem(url) || url; // Return cached image or fallback to original
+// ✅ Function to retrieve cached image from IndexedDB
+const getCachedImageIndexedDB = async (url) => {
+  if (!url) return url;
+
+  const db = await openDB("pokemon-images", 1);
+  const blob = await db.get("images", url);
+
+  return blob ? URL.createObjectURL(blob) : url; // Return cached image URL or fallback to original
 };
 
 // ✅ Function to preload cached images (faster rendering)
 const preloadCachedImage = (url) => {
-  const cachedImage = getCachedImage(url);
-  if (!cachedImage) return;
-
+  if (!url) return;
   let img = new Image();
-  img.src = cachedImage;
+  img.src = url;
 };
 
 // Fetching functions
